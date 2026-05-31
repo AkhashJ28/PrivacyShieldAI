@@ -3,13 +3,23 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
-
-const supabase = require("../config/supabase");
+const { spawn } = require("child_process");
+const {
+  createAuditLog,
+  createDocument,
+  supabaseEnabled,
+  uploadToSupabaseStorage,
+} = require("../services/dataStore");
 
 const router = express.Router();
+const uploadDir = path.join(__dirname, "../../uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const upload = multer({
-  dest: "uploads/",
+  dest: uploadDir,
 
   limits: {
     fileSize: 100 * 1024 * 1024
@@ -18,6 +28,9 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
 
     const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
       "video/mp4",
       "video/quicktime",
       "video/x-msvideo"
@@ -31,7 +44,52 @@ const upload = multer({
   }
 });
 
+function runBlurProcess(inputPath, outputPath) {
+  const pythonScriptPath = path.join(__dirname, "../../../ai-processing/blur2.py");
+  const commands = process.platform === "win32" ? [["py", ["-3"]], ["python", []]] : [["python3", []], ["python", []]];
+
+  return new Promise((resolve, reject) => {
+    let commandIndex = 0;
+
+    const runNext = () => {
+      if (commandIndex >= commands.length) {
+        reject(new Error("Python runtime not found. Install Python 3 and backend/ai-processing requirements."));
+        return;
+      }
+
+      const [command, baseArgs] = commands[commandIndex];
+      commandIndex += 1;
+      const child = spawn(command, [...baseArgs, pythonScriptPath, inputPath, outputPath], {
+        cwd: path.dirname(pythonScriptPath),
+      });
+      let stderr = "";
+
+      child.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      child.on("error", () => {
+        runNext();
+      });
+
+      child.on("close", (code) => {
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `Python blur process exited with code ${code}`));
+      });
+    };
+
+    runNext();
+  });
+}
+
 router.post("/", upload.single("file"), async (req, res) => {
+  let uploadedTempPath = null;
+  let blurredFilePath = null;
+
   try {
 
     // Check if file exists
@@ -43,68 +101,68 @@ router.post("/", upload.single("file"), async (req, res) => {
     }
 
     const file = req.file;
+    uploadedTempPath = file.path;
+    const officerName = req.body.officer_name || "Unknown Officer";
 
     // Get file extension
     const fileExtension = path.extname(file.originalname);
+    const isVideo = file.mimetype.startsWith("video/");
+    const processedExtension = isVideo ? ".mp4" : fileExtension || ".jpg";
+    const processingInputPath = `${file.path}${fileExtension || (isVideo ? ".mp4" : ".jpg")}`;
+    fs.renameSync(file.path, processingInputPath);
+    uploadedTempPath = processingInputPath;
 
     // Generate unique filename
-    const uniqueFileName = `${uuidv4()}${fileExtension}`;
+    const uniqueFileName = `${uuidv4()}${processedExtension}`;
 
-    // Read uploaded file
-    const fileBuffer = fs.readFileSync(file.path);
+    const blurredFileName = `blurred_${uniqueFileName}`;
+    blurredFilePath = path.join(uploadDir, blurredFileName);
 
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from("documents")
-      .upload(uniqueFileName, fileBuffer, {
-        contentType: file.mimetype
-      });
+    await runBlurProcess(processingInputPath, blurredFilePath);
 
-    // Handle storage upload error
-    if (uploadError) {
-      console.log("SUPABASE STORAGE ERROR:", uploadError);
+    const contentType = isVideo ? "video/mp4" : file.mimetype;
+    let publicUrl = `${req.protocol}://${req.get("host")}/uploads/${blurredFileName}`;
 
-      return res.status(500).json({
-        success: false,
-        message: "Supabase upload failed"
+    if (supabaseEnabled) {
+      const fileBuffer = fs.readFileSync(blurredFilePath);
+      publicUrl = await uploadToSupabaseStorage({
+        fileName: blurredFileName,
+        fileBuffer,
+        contentType,
       });
     }
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(uniqueFileName);
-
-    const publicUrl = publicUrlData.publicUrl;
 
     // Save file info in database
-    const { error: dbError } = await supabase
-      .from("documents")
-      .insert([
-        {
-          original_name: file.originalname,
-          file_name: uniqueFileName,
-          file_url: publicUrl
-        }
-      ]);
+    const document = await createDocument({
+      original_name: file.originalname,
+      file_name: blurredFileName,
+      file_url: publicUrl,
+      content_type: contentType,
+      media_type: isVideo ? "video" : "image",
+      processing_status: "completed"
+    });
 
-    // Handle database error
-    if (dbError) {
-      console.log("DATABASE ERROR:", dbError);
-
-      return res.status(500).json({
-        success: false,
-        message: "Database insert failed"
-      });
-    }
+    // Insert Audit Log
+    await createAuditLog({
+      action: `${isVideo ? "Video" : "Image"} Uploaded`,
+      admin_name: officerName,
+      details: `Uploaded and blurred ${file.originalname}`,
+      request_id: null
+    });
 
     // Delete temporary local file
-    fs.unlinkSync(file.path);
+    if (fs.existsSync(processingInputPath)) {
+      fs.unlinkSync(processingInputPath);
+    }
+    if (supabaseEnabled && fs.existsSync(blurredFilePath)) {
+      fs.unlinkSync(blurredFilePath);
+    }
 
     // Send success response
     res.json({
       success: true,
-      message: "File uploaded successfully",
+      message: `${isVideo ? "Video" : "Image"} uploaded and blurred successfully`,
+      document,
       fileUrl: publicUrl
     });
 
@@ -114,8 +172,12 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Upload failed"
+      message: error.message || "Upload failed"
     });
+  } finally {
+    if (uploadedTempPath && fs.existsSync(uploadedTempPath)) {
+      fs.unlinkSync(uploadedTempPath);
+    }
 
   }
 });

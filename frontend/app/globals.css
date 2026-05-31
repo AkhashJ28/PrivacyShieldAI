@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* Tailwind v4 Design Token Configuration */
+@theme {
+  --color-background: #060814; /* Cyber midnight black */
+  --color-surface: #0B0E1A;    /* Translucent panel dark blue */
+  --color-panel: #111424;      /* Sidebar solid container layout */
+  
+  --color-primary: #5B21B6;       /* Prototype deep purple */
+  --color-primary-light: #7C3AED; /* Neon purple highlight */
+  
+  --color-accent: #1D4ED8;        /* Prototype dark blue accent */
+  --color-accent-light: #2563EB;  /* Neon blue action buttons */
+  
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  
+  --background-image-hero-glow: radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.12) 0%, rgba(6, 8, 20, 0) 70%);
+}
+
+/* Base Document Styles */
+@layer base {
+  body {
+    background-color: #060814;
+    color: #E2E8F0;
+  }
+}
+
+/* Futuristic Cyberpunk UI Layout Elements */
+.glass-card {
+  background: rgba(11, 14, 26, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.glass-sidebar {
+  background: rgba(6, 8, 20, 0.85);
+  backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.neon-glow-purple {
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.2);
+}
+
+/* ========== Login Page Effects ========== */
+
+/* Scan-line overlay animation */
+.login-scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(124, 58, 237, 0.03) 2px,
+    rgba(124, 58, 237, 0.03) 4px
+  );
+  animation: scanline-drift 8s linear infinite;
+}
+
+@keyframes scanline-drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100px; }
+}
+
+/* Grid background */
+.login-grid {
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 58, 237, 0.1) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Shield icon pulse */
+.login-shield-pulse {
+  animation: shield-pulse 3s ease-in-out infinite;
+}
+
+@keyframes shield-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.2); }
+  50% { box-shadow: 0 0 30px 8px rgba(124, 58, 237, 0.15); }
+}
+
+/* Input focus glow */
+.login-input-glow:focus {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.1), inset 0 0 20px rgba(124, 58, 237, 0.02);
+}
+
+/* Error shake animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+/* ========== Toast / Notification Effects ========== */
+
+/* Status dot pulse */
+.status-dot-pulse {
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

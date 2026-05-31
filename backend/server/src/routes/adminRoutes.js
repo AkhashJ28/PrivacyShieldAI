@@ -1,8 +1,48 @@
 const express = require("express");
-
-const supabase = require("../config/supabase");
+const {
+  createAuditLog,
+  listAuditLogs,
+  listUsers,
+  updateRequestStatus,
+} = require("../services/dataStore");
 
 const router = express.Router();
+
+router.get("/audit-logs", async (req, res) => {
+  try {
+    const logs = await listAuditLogs();
+
+    res.json({
+      success: true,
+      logs,
+    });
+  } catch (error) {
+    console.log("AUDIT LOG FETCH ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch audit logs",
+    });
+  }
+});
+
+router.get("/users", async (req, res) => {
+  try {
+    const users = await listUsers();
+
+    res.json({
+      success: true,
+      users,
+    });
+  } catch (error) {
+    console.log("USER FETCH ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
+  }
+});
 
 router.patch("/:id", async (req, res) => {
 
@@ -26,42 +66,25 @@ router.patch("/:id", async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase
-      .from("access_requests")
-      .update({
-        status: status
-      })
-      .eq("id", requestId)
-      .select();
+    const updatedRequest = await updateRequestStatus(requestId, status);
 
-    if (error) {
-
-      console.log("DATABASE ERROR:", error);
-
-      return res.status(500).json({
+    if (!updatedRequest) {
+      return res.status(404).json({
         success: false,
-        message: "Failed to update request"
+        message: "Request not found"
       });
-
     }
 
-    const { error: logError } = await supabase
-        .from("audit_logs")
-        .insert([
-            {
-            request_id: requestId,
-            action: status,
-            admin_name: "Admin1"
-            }
-        ]);
-
-    if (logError) {
-    console.log("AUDIT LOG ERROR:", logError);
-    }
+    await createAuditLog({
+      request_id: requestId,
+      action: `Access ${status}`,
+      admin_name: req.body.admin_name || "Admin",
+      details: `Request ${requestId} was ${status}`
+    });
 
     res.json({
       success: true,
-      updatedRequest: data[0]
+      updatedRequest
     });
 
   } catch (error) {

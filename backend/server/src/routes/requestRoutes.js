@@ -1,38 +1,16 @@
 const express = require("express");
-
-const supabase = require("../config/supabase");
+const { createAuditLog, createRequest, listRequests } = require("../services/dataStore");
 
 const router = express.Router();
 
 router.get("/", async (req, res) => {
 
   try {
-
-    const { data, error } = await supabase
-      .from("access_requests")
-      .select(`
-        *,
-        documents (
-          original_name,
-          file_url
-        )
-      `)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-
-      console.log("DATABASE ERROR:", error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch requests"
-      });
-
-    }
+    const requests = await listRequests();
 
     res.json({
       success: true,
-      requests: data
+      requests
     });
 
   } catch (error) {
@@ -65,32 +43,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase
-      .from("access_requests")
-      .insert([
-        {
-          document_id,
-          officer_name,
-          reason
-        }
-      ])
-      .select();
+    const request = await createRequest({ document_id, officer_name, reason });
 
-    if (error) {
-
-      console.log("DATABASE ERROR:", error.message);
-      console.log(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to create request"
-      });
-
-    }
+    await createAuditLog({
+      action: "Access Requested",
+      admin_name: officer_name,
+      details: reason,
+      request_id: request.id
+    });
 
     res.json({
       success: true,
-      request: data[0]
+      request
     });
 
   } catch (error) {
