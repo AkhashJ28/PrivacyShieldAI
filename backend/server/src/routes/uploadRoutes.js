@@ -10,8 +10,24 @@ const router = express.Router();
 
 const upload = multer({
   dest: "uploads/",
+
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5 MB limit
+    fileSize: 100 * 1024 * 1024
+  },
+
+  fileFilter: (req, file, cb) => {
+
+    const allowedTypes = [
+      "video/mp4",
+      "video/quicktime",
+      "video/x-msvideo"
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only video files are allowed"));
+    }
   }
 });
 
